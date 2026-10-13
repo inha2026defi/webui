@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SimpleDEX · 인하대 스마트컨트랙트와 DeFi 개발</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#191333; --ink2:#2A2258; --pri:#4C3FA8; --pri-d:#342B7A;
+    --lav:#EEEBFA; --lav2:#DCD6F5; --amb:#D68910; --amb-l:#FDF3E0;
+    --red:#B03A2E; --red-l:#FBEDEB; --mut:#6B6685; --line:#E4E0F2;
+    --ok:#1E7D5A; --ok-l:#E6F4EE;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px 16px 64px;
+    font-family:"맑은 고딕","Malgun Gothic",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:#F7F6FD; color:var(--ink); line-height:1.6;
+  }
+  .wrap{max-width:960px; margin:0 auto}
+  header{margin-bottom:20px}
+  header .kicker{font-size:12px; font-weight:700; color:var(--pri); letter-spacing:1px}
+  header h1{margin:4px 0 2px; font-size:28px}
+  header p{margin:0; font-size:13px; color:var(--mut)}
+
+  .card{background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:14px}
+  .card h2{margin:0 0 14px; font-size:15px; color:var(--pri); display:flex; align-items:center; gap:8px}
+  .card h2 .n{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:22px; height:22px; border-radius:50%; background:var(--pri); color:#fff;
+    font-size:12px; font-weight:700; flex:none;
+  }
+
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px}
+
+  .stat{background:var(--lav); border-radius:10px; padding:11px 13px}
+  .stat .k{font-size:11px; color:var(--mut); margin-bottom:3px}
+  .stat .v{font-size:17px; font-weight:700; font-family:"Courier New",monospace; word-break:break-all}
+  .stat.amber{background:var(--amb-l)} .stat.amber .v{color:#8A5A0B}
+
+  input, select{
+    font-family:inherit; font-size:14px; padding:10px 12px;
+    border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--ink);
+  }
+  input{flex:1; min-width:180px}
+  input.addr{font-family:"Courier New",monospace; font-size:13px}
+
+  button{
+    font-family:inherit; font-size:14px; font-weight:700; cursor:pointer;
+    padding:10px 18px; border:0; border-radius:9px; background:var(--pri); color:#fff;
+  }
+  button:hover:not(:disabled){background:var(--pri-d)}
+  button:disabled{background:#CFCADF; color:#8C87A3; cursor:not-allowed}
+  button.ghost{background:#fff; color:var(--pri); border:1px solid var(--lav2)}
+  button.amber{background:var(--amb); color:#fff}
+  button.amber:hover:not(:disabled){background:#B57408}
+
+  .pill{display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700}
+  .pill.ok{background:var(--ok-l); color:var(--ok)}
+  .pill.warn{background:var(--red-l); color:var(--red)}
+
+  .note{font-size:12px; color:var(--mut); margin-top:10px}
+  .note.amber{background:var(--amb-l); color:#8A5A0B; padding:10px 12px; border-radius:9px; font-weight:700}
+  .note.red{background:var(--red-l); color:var(--red); padding:10px 12px; border-radius:9px; font-weight:700}
+
+  table{width:100%; border-collapse:collapse; margin-top:10px; font-size:13px}
+  th{text-align:left; font-size:11px; color:var(--mut); padding:6px 8px; font-weight:700}
+  td{padding:8px; border-top:1px solid var(--line); font-family:"Courier New",monospace}
+  tr.hot td{background:var(--red-l); color:var(--red); font-weight:700}
+
+  #log{
+    background:var(--ink); color:#D8D3F5; border-radius:10px; padding:12px 14px;
+    font-family:"Courier New",monospace; font-size:12px; white-space:pre-wrap;
+    max-height:170px; overflow-y:auto; margin-top:12px;
+  }
+  .hidden{display:none}
+  .muted{color:var(--mut); font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">인하대학교 · 스마트컨트랙트와 DeFi 개발</div>
+  <h1>SimpleDEX</h1>
+  <p>AMM 기반 간단 DEX 실습용 화면 · Sepolia 테스트넷 전용</p>
+</header>
+
+<!-- 1. 지갑 -->
+<div class="card">
+  <h2><span class="n">1</span> 지갑 연결</h2>
+  <div class="row">
+    <button id="btnConnect">Connect Wallet</button>
+    <span id="walletInfo" class="muted">연결되지 않음</span>
+  </div>
+  <div id="netWarn" class="note red hidden">
+    Sepolia 테스트넷이 아닙니다. MetaMask 에서 네트워크를 Sepolia 로 바꿔주세요.
+  </div>
+</div>
+
+<!-- 2. DEX 선택 -->
+<div class="card">
+  <h2><span class="n">2</span> DEX 선택</h2>
+  <div class="row">
+    <input id="dexAddr" class="addr" placeholder="내 SimpleDEX 주소 (0x...)">
+    <button id="btnLoad" class="ghost">불러오기</button>
+  </div>
+  <div class="note">
+    토큰 주소는 입력하지 않습니다. 화면이 DEX 컨트랙트에 <code>tokenA()</code> / <code>tokenB()</code> 를 직접 물어봅니다.
+  </div>
+</div>
+
+<!-- 3. 풀 상태 -->
+<div class="card hidden" id="poolCard">
+  <h2><span class="n">3</span> 풀 상태</h2>
+  <div class="grid">
+    <div class="stat"><div class="k" id="kResA">reserveA</div><div class="v" id="vResA">-</div></div>
+    <div class="stat"><div class="k" id="kResB">reserveB</div><div class="v" id="vResB">-</div></div>
+    <div class="stat amber"><div class="k">현재 가격</div><div class="v" id="vPrice">-</div></div>
+    <div class="stat"><div class="k">k = reserveA × reserveB</div><div class="v" id="vK">-</div></div>
+  </div>
+  <div class="note" id="poolMeta"></div>
+</div>
+
+<!-- 4. 내 잔고와 승인 -->
+<div class="card hidden" id="walletCard">
+  <h2><span class="n">4</span> 내 잔고와 승인(allowance)</h2>
+  <div class="grid">
+    <div class="stat"><div class="k" id="kBalA">잔고 A</div><div class="v" id="vBalA">-</div></div>
+    <div class="stat"><div class="k" id="kBalB">잔고 B</div><div class="v" id="vBalB">-</div></div>
+    <div class="stat amber"><div class="k" id="kAllowA">A → DEX 승인</div><div class="v" id="vAllowA">-</div></div>
+    <div class="stat amber"><div class="k" id="kAllowB">B → DEX 승인</div><div class="v" id="vAllowB">-</div></div>
+  </div>
+  <div class="note amber">
+    이 승인은 한 번 해두면 계속 살아 있습니다. 지금 숫자를 기억해 두세요 — Part 3 에서 다시 확인합니다.
+  </div>
+</div>
+
+<!-- 5. 스왑 -->
+<div class="card hidden" id="swapCard">
+  <h2><span class="n">5</span> 스왑</h2>
+  <div class="row">
+    <select id="dir">
+      <option value="true">A → B</option>
+      <option value="false">B → A</option>
+    </select>
+    <input id="amtIn" type="number" min="0" step="any" placeholder="보낼 금액 (예: 100)">
+    <button id="btnQuote" class="ghost">예상 조회</button>
+  </div>
+
+  <div class="grid" style="margin-top:12px">
+    <div class="stat"><div class="k">예상 수령량</div><div class="v" id="vOut">-</div></div>
+    <div class="stat"><div class="k">1개당 단가</div><div class="v" id="vUnit">-</div></div>
+    <div class="stat amber"><div class="k">가격 영향 (슬리피지)</div><div class="v" id="vImpact">-</div></div>
+  </div>
+
+  <div class="row" style="margin-top:14px">
+    <button id="btnApprove" class="amber" disabled>Approve</button>
+    <button id="btnSwap" disabled>Swap</button>
+    <span id="swapHint" class="muted"></span>
+  </div>
+
+  <div class="note">
+    금액은 <strong>화면에 보이는 단위</strong>로 입력합니다. 0 을 여섯 개 붙이지 않아도 됩니다.
+  </div>
+</div>
+
+<!-- 6. 슬리피지 시뮬레이터 -->
+<div class="card hidden" id="simCard">
+  <h2><span class="n">6</span> 슬리피지 시뮬레이터 <span class="muted" style="font-weight:400">— 트랜잭션 없이 계산만</span></h2>
+  <div class="row">
+    <input id="simFront" type="number" min="0" step="any" placeholder="내 앞에 끼어든 거래 (0이면 없음)">
+    <input id="simMine" type="number" min="0" step="any" placeholder="내 거래 금액">
+    <button id="btnSim" class="ghost">계산</button>
+  </div>
+  <div id="simOut"></div>
+  <div class="note">
+    같은 금액을 거래해도, 내 앞에 누군가 먼저 거래하면 내가 받는 양이 줄어듭니다.
+    <code>swap()</code> 에 최소 수령량 조건이 없으면 이 상태로 그대로 체결됩니다.
+  </div>
+</div>
+
+<div id="log">준비됨. Connect Wallet 을 눌러 시작하세요.</div>
+<div class="note">
+  수업용 화면입니다. Sepolia 테스트넷에서만 사용하세요.
+</div>
+
+</div>
+
+<script>
+/* ────────────────────────────────────────────────
+   ABI — 이 화면이 사용하는 함수만 추려 담았습니다.
+   ──────────────────────────────────────────────── */
+const DEX_ABI = [
+  "function tokenA() view returns (address)",
+  "function tokenB() view returns (address)",
+  "function owner() view returns (address)",
+  "function reserveA() view returns (uint256)",
+  "function reserveB() view returns (uint256)",
+  "function getReserves() view returns (uint256, uint256)",
+  "function getPrice() view returns (uint256)",
+  "function getK() view returns (uint256)",
+  "function getAmountOut(uint256 amountIn, bool aToB) view returns (uint256)",
+  "function swap(uint256 amountIn, bool aToB)"
+];
+const ERC20_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 value) returns (bool)"
+];
+
+const SEPOLIA = 11155111n;
+const FEE_NUM = 997n, FEE_DEN = 1000n;   // 컨트랙트와 같은 값
+
+let provider, signer, account;
+let dex, tokA, tokB;
+let metaA = null, metaB = null;          // {addr, symbol, decimals}
+let pool = {rA:0n, rB:0n};
+
+const $ = (id) => document.getElementById(id);
+function log(msg){
+  const el = $("log");
+  el.textContent = "› " + msg + "\n" + el.textContent;
+}
+function fmt(v, dec, digits){
+  const s = ethers.formatUnits(v, dec);
+  const n = Number(s);
+  if (!isFinite(n)) return s;
+  return n.toLocaleString(undefined, {maximumFractionDigits: digits === undefined ? 4 : digits});
+}
+
+/* ── 1. 지갑 ── */
+$("btnConnect").onclick = async () => {
+  try{
+    if (!window.ethereum) { log("MetaMask 를 찾을 수 없습니다. 확장 프로그램을 설치하세요."); return; }
+    provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    signer  = await provider.getSigner();
+    account = await signer.getAddress();
+
+    const net = await provider.getNetwork();
+    $("walletInfo").innerHTML =
+      '<span class="pill ' + (net.chainId === SEPOLIA ? 'ok">Sepolia' : 'warn">chainId ' + net.chainId) + '</span> ' +
+      account.slice(0,6) + "…" + account.slice(-4);
+    $("netWarn").classList.toggle("hidden", net.chainId === SEPOLIA);
+
+    log("지갑 연결됨: " + account);
+    window.ethereum.on?.("accountsChanged", () => location.reload());
+    window.ethereum.on?.("chainChanged",   () => location.reload());
+  }catch(e){ log("연결 실패: " + (e.shortMessage || e.message)); }
+};
+
+/* ── 2. DEX 불러오기 ── */
+$("btnLoad").onclick = async () => {
+  try{
+    if (!signer) { log("먼저 지갑을 연결하세요."); return; }
+    const addr = $("dexAddr").value.trim();
+    if (!ethers.isAddress(addr)) { log("올바른 주소 형식이 아닙니다."); return; }
+
+    dex = new ethers.Contract(addr, DEX_ABI, signer);
+
+    // DEX 가 알려주는 토큰 주소를 그대로 씁니다
+    const [aAddr, bAddr] = await Promise.all([dex.tokenA(), dex.tokenB()]);
+    tokA = new ethers.Contract(aAddr, ERC20_ABI, signer);
+    tokB = new ethers.Contract(bAddr, ERC20_ABI, signer);
+
+    const [sa, da, sb, db] = await Promise.all([
+      tokA.symbol(), tokA.decimals(), tokB.symbol(), tokB.decimals()
+    ]);
+    metaA = {addr:aAddr, symbol:sa, decimals:Number(da)};
+    metaB = {addr:bAddr, symbol:sb, decimals:Number(db)};
+
+    $("dir").options[0].text = sa + " → " + sb;
+    $("dir").options[1].text = sb + " → " + sa;
+    $("kResA").textContent  = "reserve " + sa;
+    $("kResB").textContent  = "reserve " + sb;
+    $("kBalA").textContent  = "내 " + sa + " 잔고";
+    $("kBalB").textContent  = "내 " + sb + " 잔고";
+    $("kAllowA").textContent = sa + " → DEX 승인";
+    $("kAllowB").textContent = sb + " → DEX 승인";
+    $("poolMeta").textContent = sa + " : " + aAddr + "   /   " + sb + " : " + bAddr;
+
+    ["poolCard","walletCard","swapCard","simCard"].forEach(id => $(id).classList.remove("hidden"));
+    log("DEX 불러옴: " + sa + " / " + sb);
+    await refresh();
+  }catch(e){
+    log("불러오기 실패: " + (e.shortMessage || e.message) + "  — 주소와 네트워크를 확인하세요.");
+  }
+};
+
+/* ── 3·4. 상태 갱신 ── */
+async function refresh(){
+  const [res, balA, balB, alwA, alwB] = await Promise.all([
+    dex.getReserves(),
+    tokA.balanceOf(account), tokB.balanceOf(account),
+    tokA.allowance(account, dex.target), tokB.allowance(account, dex.target)
+  ]);
+  pool.rA = res[0]; pool.rB = res[1];
+
+  $("vResA").textContent = fmt(pool.rA, metaA.decimals, 2);
+  $("vResB").textContent = fmt(pool.rB, metaB.decimals, 2);
+
+  if (pool.rA > 0n){
+    const p = Number(ethers.formatUnits(pool.rB, metaB.decimals)) /
+              Number(ethers.formatUnits(pool.rA, metaA.decimals));
+    $("vPrice").textContent = p.toLocaleString(undefined,{maximumFractionDigits:6});
+    $("vK").textContent = Number(
+      ethers.formatUnits(pool.rA, metaA.decimals)
+    ) * Number(ethers.formatUnits(pool.rB, metaB.decimals));
+    $("vK").textContent = Number($("vK").textContent).toExponential(4);
+  } else {
+    $("vPrice").textContent = "유동성 없음";
+    $("vK").textContent = "0";
+  }
+
+  $("vBalA").textContent   = fmt(balA, metaA.decimals, 2);
+  $("vBalB").textContent   = fmt(balB, metaB.decimals, 2);
+  $("vAllowA").textContent = fmt(alwA, metaA.decimals, 2);
+  $("vAllowB").textContent = fmt(alwB, metaB.decimals, 2);
+
+  updateButtons(alwA, alwB);
+}
+
+/* 승인이 충분한지에 따라 버튼 상태를 바꿉니다 (실제 DEX 와 같은 방식) */
+async function updateButtons(alwA, alwB){
+  const aToB = $("dir").value === "true";
+  const mIn  = aToB ? metaA : metaB;
+  const raw  = parseAmount($("amtIn").value, mIn.decimals);
+  const alw  = aToB ? alwA : alwB;
+
+  if (raw === null || raw === 0n){
+    $("btnApprove").disabled = true; $("btnSwap").disabled = true;
+    $("swapHint").textContent = "금액을 입력하세요.";
+    return;
+  }
+  if (alw >= raw){
+    $("btnApprove").disabled = true; $("btnSwap").disabled = false;
+    $("swapHint").textContent = "승인이 충분합니다. 바로 Swap 할 수 있습니다.";
+  } else {
+    $("btnApprove").disabled = false; $("btnSwap").disabled = true;
+    $("swapHint").textContent = "승인이 부족합니다. Approve 를 먼저 하세요.";
+  }
+}
+
+function parseAmount(v, dec){
+  if (v === "" || v === null || v === undefined) return null;
+  try { return ethers.parseUnits(String(v), dec); } catch { return null; }
+}
+
+/* ── 5. 예상 조회 ── */
+async function quote(){
+  const aToB = $("dir").value === "true";
+  const mIn  = aToB ? metaA : metaB;
+  const mOut = aToB ? metaB : metaA;
+  const raw  = parseAmount($("amtIn").value, mIn.decimals);
+  if (raw === null || raw === 0n){
+    $("vOut").textContent = "-"; $("vUnit").textContent = "-"; $("vImpact").textContent = "-";
+    return;
+  }
+  try{
+    // 컨트랙트에 직접 물어봅니다. 화면이 따로 계산하지 않습니다.
+    const out = await dex.getAmountOut(raw, aToB);
+
+    const inN  = Number(ethers.formatUnits(raw, mIn.decimals));
+    const outN = Number(ethers.formatUnits(out, mOut.decimals));
+    const rIn  = Number(ethers.formatUnits(aToB ? pool.rA : pool.rB, mIn.decimals));
+    const rOut = Number(ethers.formatUnits(aToB ? pool.rB : pool.rA, mOut.decimals));
+
+    const midPrice = rOut / rIn;          // 거래 전 가격
+    const execPrice = outN / inN;         // 실제 체결 단가
+    const impact = (1 - execPrice / midPrice) * 100;
+
+    $("vOut").textContent    = outN.toLocaleString(undefined,{maximumFractionDigits:4}) + " " + mOut.symbol;
+    $("vUnit").textContent   = execPrice.toLocaleString(undefined,{maximumFractionDigits:6});
+    $("vImpact").textContent = impact.toFixed(2) + " %";
+  }catch(e){
+    $("vOut").textContent = "조회 실패";
+    log("예상 조회 실패: " + (e.shortMessage || e.message));
+  }
+}
+$("btnQuote").onclick = quote;
+$("amtIn").oninput = async () => { await refresh(); await quote(); };
+$("dir").onchange  = async () => { await refresh(); await quote(); };
+
+/* ── Approve ── */
+$("btnApprove").onclick = async () => {
+  try{
+    const aToB = $("dir").value === "true";
+    const mIn  = aToB ? metaA : metaB;
+    const tok  = aToB ? tokA : tokB;
+    const raw  = parseAmount($("amtIn").value, mIn.decimals);
+
+    log("approve 전송 중… (" + mIn.symbol + ")");
+    const tx = await tok.approve(dex.target, raw);
+    log("tx: " + tx.hash);
+    await tx.wait();
+    log("승인 완료. allowance 가 갱신되었습니다.");
+    await refresh();
+  }catch(e){ log("approve 실패: " + (e.shortMessage || e.message)); }
+};
+
+/* ── Swap ── */
+$("btnSwap").onclick = async () => {
+  try{
+    const aToB = $("dir").value === "true";
+    const mIn  = aToB ? metaA : metaB;
+    const raw  = parseAmount($("amtIn").value, mIn.decimals);
+
+    log("swap 전송 중…");
+    const tx = await dex.swap(raw, aToB);
+    log("tx: " + tx.hash);
+    await tx.wait();
+    log("체결 완료. 풀 상태와 잔고를 갱신합니다.");
+    await refresh();
+    await quote();
+  }catch(e){ log("swap 실패: " + (e.shortMessage || e.message)); }
+};
+
+/* ── 6. 시뮬레이터 (트랜잭션 없이 로컬 계산) ── */
+function amountOutLocal(amtIn, rIn, rOut){
+  const f = amtIn * FEE_NUM;
+  return (f * rOut) / (rIn * FEE_DEN + f);
+}
+$("btnSim").onclick = () => {
+  if (!metaA) return;
+  const aToB = $("dir").value === "true";
+  const mIn  = aToB ? metaA : metaB;
+  const mOut = aToB ? metaB : metaA;
+
+  let rIn  = aToB ? pool.rA : pool.rB;
+  let rOut = aToB ? pool.rB : pool.rA;
+  if (rIn === 0n || rOut === 0n){ $("simOut").innerHTML = '<div class="note red">유동성이 없습니다.</div>'; return; }
+
+  const front = parseAmount($("simFront").value || "0", mIn.decimals) ?? 0n;
+  const mine  = parseAmount($("simMine").value, mIn.decimals);
+  if (mine === null || mine === 0n){ $("simOut").innerHTML = '<div class="note red">내 거래 금액을 입력하세요.</div>'; return; }
+
+  // 끼어든 거래가 없을 때
+  const fair = amountOutLocal(mine, rIn, rOut);
+
+  // 끼어든 거래가 먼저 체결된 뒤
+  let r2In = rIn, r2Out = rOut;
+  if (front > 0n){
+    const fo = amountOutLocal(front, rIn, rOut);
+    r2In  = rIn + front;
+    r2Out = rOut - fo;
+  }
+  const actual = amountOutLocal(mine, r2In, r2Out);
+
+  const fairN   = Number(ethers.formatUnits(fair,   mOut.decimals));
+  const actualN = Number(ethers.formatUnits(actual, mOut.decimals));
+  const lossPct = fairN > 0 ? (1 - actualN / fairN) * 100 : 0;
+
+  $("simOut").innerHTML =
+    '<table>' +
+      '<tr><th>상황</th><th>내가 받는 ' + mOut.symbol + '</th><th>차이</th></tr>' +
+      '<tr><td>앞선 거래 없음</td><td>' + fairN.toLocaleString(undefined,{maximumFractionDigits:4}) + '</td><td>—</td></tr>' +
+      '<tr class="' + (lossPct > 1 ? 'hot' : '') + '"><td>앞선 거래 있음</td><td>' +
+        actualN.toLocaleString(undefined,{maximumFractionDigits:4}) + '</td><td>' +
+        (fairN - actualN).toLocaleString(undefined,{maximumFractionDigits:4}) +
+        ' 손해 (' + lossPct.toFixed(2) + '%)</td></tr>' +
+    '</table>';
+};
+</script>
+</body>
+</html>
